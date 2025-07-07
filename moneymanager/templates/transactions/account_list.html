@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Your Accounts</h2>
+<a href="{% url 'account_create' %}" class="btn btn-primary mb-2">Add Account</a>
+<ul>
+    {% for account in accounts %}
+    <li>{{ account.name }} ({{ account.account_type }}) - ₹{{ account.balance }}</li>
+    {% empty %}
+    <li>No accounts found.</li>
+    {% endfor %}
+</ul>
+{% endblock %}

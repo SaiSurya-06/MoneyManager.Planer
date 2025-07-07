@@ -1,0 +1,13 @@
+django>=4.0
+djangorestframework
+django-environ
+pandas
+openpyxl
+PyPDF2
+tabula-py
+gunicorn
+psycopg2-binary
+cloudinary
+django-cors-headers
+djangorestframework-simplejwt
+# Add other frontend or deployment tools as needed

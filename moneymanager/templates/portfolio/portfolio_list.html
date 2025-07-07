@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>My Portfolio</h2>
+<a href="{% url 'holding_add' %}" class="btn btn-primary mb-3">Add Holding</a>
+<table class="table">
+    <tr>
+        <th>Type</th>
+        <th>Name</th>
+        <th>Symbol</th>
+        <th>Qty</th>
+        <th>Avg Price</th>
+        <th>Invested</th>
+        <th>Live Price</th>
+        <th>Current Value</th>
+        <th>Gain/Loss</th>
+        <th>Gain %</th>
+    </tr>
+    {% for row in portfolio %}
+    <tr>
+        <td>{{ row.holding.asset_type }}</td>
+        <td>{{ row.holding.name }}</td>
+        <td>{{ row.holding.symbol }}</td>
+        <td>{{ row.holding.quantity }}</td>
+        <td>{{ row.holding.avg_price }}</td>
+        <td>{{ row.holding.invested }}</td>
+        <td>
+            {% if row.live_price %}
+                ₹{{ row.live_price|floatformat:2 }}
+            {% else %}
+                N/A
+            {% endif %}
+        </td>
+        <td>₹{{ row.current_value|floatformat:2 }}</td>
+        <td>
+            {% if row.gain >= 0 %}
+                <span class="text-success">+₹{{ row.gain|floatformat:2 }}</span>
+            {% else %}
+                <span class="text-danger">₹{{ row.gain|floatformat:2 }}</span>
+            {% endif %}
+        </td>
+        <td>{{ row.gain_pct|floatformat:2 }}%</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="10">No holdings yet.</td></tr>
+    {% endfor %}
+</table>
+<div class="mt-3">
+    <strong>Total Invested:</strong> ₹{{ total_invested|floatformat:2 }}<br>
+    <strong>Current Value:</strong> ₹{{ total_current|floatformat:2 }}<br>
+    <strong>Overall Gain/Loss:</strong>
+    {% with gain=total_current|floatformat:2|add:"-{{total_invested|floatformat:2}}" %}
+        {% if gain|floatformat:2 >= 0 %}
+            <span class="text-success">+₹{{ gain }}</span>
+        {% else %}
+            <span class="text-danger">₹{{ gain }}</span>
+        {% endif %}
+    {% endwith %}
+</div>
+{% endblock %}
