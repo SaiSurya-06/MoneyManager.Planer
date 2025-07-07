@@ -24,7 +24,7 @@ INSTALLED_APPS = [
     # Third-party
     "rest_framework",
     "rest_framework_simplejwt",
-    "corsheaders",  # If you want cross-origin API access
+    "corsheaders",
 
     # Local apps
     "accounts",
@@ -37,7 +37,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    "corsheaders.middleware.CorsMiddleware",  # For API CORS (optional, before CommonMiddleware)
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -74,7 +74,6 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
-# For production, use PostgreSQL or MySQL and load from environment
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -129,7 +128,7 @@ REST_FRAMEWORK = {
     ],
 }
 
-# SimpleJWT settings (optional: tune as you wish)
+# SimpleJWT settings
 from datetime import timedelta
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
@@ -139,19 +138,18 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-# CORS (for API, optional)
-CORS_ALLOW_ALL_ORIGINS = DEBUG  # In production, set to False and explicitly allow domains
-# CORS_ALLOWED_ORIGINS = ["http://localhost:3000", ...]
+# CORS settings
+CORS_ALLOW_ALL_ORIGINS = DEBUG
 
-# Alpha Vantage API Key (for portfolio live prices)
+# Alpha Vantage API Key
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "YOUR_API_KEY")
 
-# Email settings for password reset
+# Email settings
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-# For production, use SMTP and configure EMAIL_HOST, EMAIL_PORT, etc.
 
-# Extra: set current year in templates for footer
-from django.utils import timezone
+# Current year context processor
 def current_year(request):
+    from django.utils import timezone
     return {"now": timezone.now().year}
+
 TEMPLATES[0]["OPTIONS"]["context_processors"].append("moneymanager.settings.current_year")
