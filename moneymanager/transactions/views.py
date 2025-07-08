@@ -1,75 +1,205 @@
 import pandas as pd
 import fitz  # PyMuPDF
 import re
+import csv
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from .models import Transaction, Category, Account
-from .forms import TransactionForm, StatementUploadForm, CategoryForm, AccountForm
+from django.http import JsonResponse, HttpResponse
+from django.utils.dateparse import parse_date
+from .models import (
+    Transaction, Category, Account,
+    RecurringTransaction, Budget, Tag, TransactionTag
+)
+from .forms import (
+    TransactionForm, StatementUploadForm,
+    CategoryForm, AccountForm,
+    RecurringTransactionForm, BudgetForm, TagForm
+)
 
 
+# ========== DASHBOARD ==========
+@login_required
+def dashboard(request):
+    from django.db.models import Sum
+    from django.utils.timezone import now
+
+    user = request.user
+    today = now().date()
+    year = today.year
+
+    transactions = Transaction.objects.filter(user=user, date__year=year)
+
+    category_data = (
+        transactions.filter(transaction_type='expense')
+        .values('category__name')
+        .annotate(total=Sum('amount'))
+        .order_by('-total')
+    )
+
+    monthly_data = []
+    for month in range(1, 13):
+        income = transactions.filter(transaction_type='income', date__month=month).aggregate(Sum('amount'))['amount__sum'] or 0
+        expense = transactions.filter(transaction_type='expense', date__month=month).aggregate(Sum('amount'))['amount__sum'] or 0
+        monthly_data.append({
+            'month': month,
+            'income': float(income),
+            'expense': float(expense),
+            'savings': float(income - expense),
+        })
+
+    context = {
+        'category_data': list(category_data),
+        'monthly_data': monthly_data,
+    }
+    return render(request, 'transactions/dashboard.html', context)
+
+
+# ========== CSV EXPORT ==========
+@login_required
+def export_transactions_csv(request):
+    user = request.user
+    transactions = Transaction.objects.filter(user=user)
+
+    # Optional filters
+    query = request.GET.get('q')
+    txn_type = request.GET.get('type')
+    category = request.GET.get('category')
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    if query:
+        transactions = transactions.filter(description__icontains=query)
+    if txn_type:
+        transactions = transactions.filter(transaction_type=txn_type)
+    if category:
+        transactions = transactions.filter(category__name__icontains=category)
+    if start_date:
+        transactions = transactions.filter(date__gte=parse_date(start_date))
+    if end_date:
+        transactions = transactions.filter(date__lte=parse_date(end_date))
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="transactions.csv"'
+    writer = csv.writer(response)
+    writer.writerow(['Date', 'Description', 'Amount', 'Type', 'Account', 'Category'])
+
+    for txn in transactions:
+        writer.writerow([
+            txn.date,
+            txn.description,
+            txn.amount,
+            txn.transaction_type,
+            txn.account.name,
+            txn.category.name if txn.category else ''
+        ])
+    return response
+
+
+# ========== TRANSACTION VIEWS ==========
+@login_required
+def transaction_list(request):
+    transactions = Transaction.objects.filter(user=request.user).order_by('-date')
+
+    query = request.GET.get('q')
+    txn_type = request.GET.get('type')
+    category = request.GET.get('category')
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    if query:
+        transactions = transactions.filter(description__icontains=query)
+    if txn_type:
+        transactions = transactions.filter(transaction_type=txn_type)
+    if category:
+        transactions = transactions.filter(category__name__icontains=category)
+    if start_date:
+        transactions = transactions.filter(date__gte=start_date)
+    if end_date:
+        transactions = transactions.filter(date__lte=end_date)
+
+    return render(request, 'transactions/transaction_list.html', {'transactions': transactions})
+
+
+@login_required
+def transaction_create(request):
+    if request.method == 'POST':
+        form = TransactionForm(request.POST)
+        if form.is_valid():
+            txn = form.save(commit=False)
+            txn.user = request.user
+            txn.save()
+
+            # Save tags
+            tags_input = request.POST.get('tags', '')
+            if tags_input:
+                tag_names = [t.strip() for t in tags_input.split(',')]
+                for name in tag_names:
+                    tag_obj, _ = Tag.objects.get_or_create(user=request.user, name=name)
+                    TransactionTag.objects.create(transaction=txn, tag=tag_obj)
+            return redirect('transaction_list')
+    else:
+        form = TransactionForm()
+    return render(request, 'transactions/transaction_form.html', {'form': form})
+
+
+@login_required
+def transaction_edit(request, pk):
+    txn = get_object_or_404(Transaction, pk=pk, user=request.user)
+    if request.method == 'POST':
+        form = TransactionForm(request.POST, instance=txn)
+        if form.is_valid():
+            form.save()
+            return redirect('transaction_list')
+    else:
+        form = TransactionForm(instance=txn)
+    return render(request, 'transactions/transaction_form.html', {'form': form})
+
+
+# ========== PDF/EXCEL UPLOAD ==========
 @login_required
 def transaction_upload(request):
     if request.method == 'POST':
         form = StatementUploadForm(request.POST, request.FILES)
         if form.is_valid():
             file = form.cleaned_data['file']
-            try:
-                txn_count = 0
-                duplicate_count = 0
+            txn_count = 0
+            duplicate_count = 0
 
+            try:
                 if file.name.endswith('.pdf'):
-                    file.seek(0)
                     text = ""
                     with fitz.open(stream=file.read(), filetype="pdf") as doc:
                         for page in doc:
                             text += page.get_text()
-
                     lines = text.split('\n')
                     account_obj = Account.objects.filter(user=request.user).first()
                     if not account_obj:
-                        messages.error(request, "Please add at least one account before uploading.")
-                        return redirect('account_list')
+                        return JsonResponse({'success': False, 'message': 'Add an account first.'})
 
                     i = 0
                     while i < len(lines) - 1:
                         line1 = lines[i].strip()
                         line2 = lines[i + 1].strip()
 
-                        if re.match(r"\d{2}-[A-Z]{3}-\d{4}\s+\d{2}-[A-Z]{3}-\d{4}", line1):
+                        if re.match(r"\d{2}-[A-Z]{3}-\d{4}", line1):
                             try:
                                 parts = line1.split()
                                 date_str = parts[0]
-                                value_date_str = parts[1]
-                                desc_start = line1.find(value_date_str) + len(value_date_str)
-                                description = line1[desc_start:].strip()
-
-                                # fallback: collect numeric amounts in line2
+                                description = ' '.join(parts[2:])
                                 amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line2)
-                                withdrawal, deposit = None, None
-                                if len(amounts) == 3:
-                                    withdrawal, deposit, _ = amounts
-                                elif len(amounts) == 2:
-                                    if 'Cr' in line2:
-                                        deposit = amounts[0]
-                                    else:
-                                        withdrawal = amounts[0]
-                                elif len(amounts) == 1:
-                                    if 'Cr' in line2:
-                                        deposit = amounts[0]
-                                    else:
-                                        withdrawal = amounts[0]
 
-                                if withdrawal:
-                                    amount = float(withdrawal.replace(',', ''))
-                                    txn_type = 'expense'
-                                elif deposit:
-                                    amount = float(deposit.replace(',', ''))
+                                amount = None
+                                txn_type = None
+
+                                if 'Cr' in line2:
+                                    amount = float(amounts[0].replace(',', ''))
                                     txn_type = 'income'
                                 else:
-                                    i += 2
-                                    continue
+                                    amount = float(amounts[0].replace(',', ''))
+                                    txn_type = 'expense'
 
                                 txn_date = datetime.strptime(date_str, "%d-%b-%Y").date()
 
@@ -103,135 +233,20 @@ def transaction_upload(request):
                         else:
                             i += 1
 
-                    if txn_count:
-                        msg = f"{txn_count} transaction(s) uploaded successfully!"
-                        if duplicate_count:
-                            msg += f" {duplicate_count} duplicate(s) skipped."
-                        messages.success(request, msg)
-                    else:
-                        messages.error(request, "No valid new transactions found in PDF.")
-                    return redirect('transaction_list')
-
-                elif file.name.endswith('.csv'):
-                    df = pd.read_csv(file)
-                    dfs = [df]
-                elif file.name.endswith('.xls') or file.name.endswith('.xlsx'):
-                    df = pd.read_excel(file)
-                    dfs = [df]
+                    msg = f"{txn_count} transactions uploaded."
+                    if duplicate_count:
+                        msg += f" {duplicate_count} duplicates skipped."
+                    return JsonResponse({'success': True, 'message': msg})
                 else:
-                    messages.error(request, "Unsupported file type.")
-                    return redirect('transaction_upload')
-
-                if not file.name.endswith('.pdf'):
-                    col_map_variants = {
-                        'date': ['date', 'Date', 'transaction date', 'Transaction Date'],
-                        'description': ['description', 'Description', 'desc', 'Desc'],
-                        'amount': ['amount', 'Amount', 'amt', 'Amt'],
-                        'type': ['type', 'Type', 'transaction type', 'Transaction Type'],
-                        'category': ['category', 'Category']
-                    }
-                    required_cols = set(col_map_variants.keys())
-
-                    for df in dfs:
-                        norm_cols = [col.strip().lower() for col in df.columns]
-                        df.columns = norm_cols
-                        rename_dict = {}
-                        for target, variants in col_map_variants.items():
-                            for v in variants:
-                                if v.lower() in norm_cols:
-                                    rename_dict[v.lower()] = target
-                        df = df.rename(columns=rename_dict)
-                        if not required_cols.issubset(df.columns):
-                            continue
-
-                        account_obj = Account.objects.filter(user=request.user).first()
-                        for _, row in df.iterrows():
-                            if pd.isnull(row.get('date')) or pd.isnull(row.get('amount')):
-                                continue
-                            try:
-                                txn_date = pd.to_datetime(row['date']).date()
-                            except Exception:
-                                continue
-
-                            category_name = row.get('category', 'Uncategorized')
-                            description = str(row.get('description', ''))
-                            txn_type = str(row.get('type', 'expense')).lower()
-                            amount = row['amount']
-                            category_obj, _ = Category.objects.get_or_create(user=request.user, name=category_name)
-
-                            if Transaction.objects.filter(
-                                user=request.user,
-                                date=txn_date,
-                                amount=amount,
-                                description=description,
-                                account=account_obj
-                            ).exists():
-                                duplicate_count += 1
-                                continue
-
-                            Transaction.objects.create(
-                                user=request.user,
-                                date=txn_date,
-                                description=description,
-                                amount=amount,
-                                transaction_type=txn_type,
-                                account=account_obj,
-                                category=category_obj
-                            )
-                            txn_count += 1
-
-                    if txn_count:
-                        msg = f"{txn_count} transaction(s) uploaded successfully!"
-                        if duplicate_count:
-                            msg += f" {duplicate_count} duplicate(s) skipped."
-                        messages.success(request, msg)
-                    else:
-                        messages.error(request, "No valid new transactions found in statement.")
-
+                    return JsonResponse({'success': False, 'message': 'Unsupported file type'})
             except Exception as e:
-                messages.error(request, f"Error: {e}")
-            return redirect('transaction_list')
+                return JsonResponse({'success': False, 'message': f'Error: {str(e)}'})
     else:
         form = StatementUploadForm()
-    return render(request, 'transactions/transaction_upload.html', {'form': form})
+    return render(request, 'transactions/import_pdf.html', {'form': form})
 
 
-@login_required
-def transaction_edit(request, pk):
-    txn = get_object_or_404(Transaction, pk=pk, user=request.user)
-    if request.method == 'POST':
-        form = TransactionForm(request.POST, instance=txn)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "Transaction updated successfully!")
-            return redirect('transaction_list')
-    else:
-        form = TransactionForm(instance=txn)
-    return render(request, 'transactions/transaction_form.html', {'form': form})
-
-
-@login_required
-def add_category(request):
-    if request.method == 'POST':
-        form = CategoryForm(request.POST)
-        if form.is_valid():
-            cat = form.save(commit=False)
-            cat.user = request.user
-            cat.is_custom = True
-            cat.save()
-            messages.success(request, "Category added!")
-            return redirect('category_list')
-    else:
-        form = CategoryForm()
-    return render(request, 'transactions/category_form.html', {'form': form})
-
-
-@login_required
-def category_list(request):
-    cats = Category.objects.filter(user=request.user)
-    return render(request, 'transactions/category_list.html', {'categories': cats})
-
-
+# ========== ACCOUNT ==========
 @login_required
 def account_list(request):
     accounts = Account.objects.filter(user=request.user)
@@ -252,21 +267,86 @@ def account_create(request):
     return render(request, 'transactions/account_form.html', {'form': form})
 
 
+# ========== CATEGORY ==========
 @login_required
-def transaction_list(request):
-    transactions = Transaction.objects.filter(user=request.user).order_by('-date')
-    return render(request, 'transactions/transaction_list.html', {'transactions': transactions})
-
-
-@login_required
-def transaction_create(request):
+def add_category(request):
     if request.method == 'POST':
-        form = TransactionForm(request.POST)
+        form = CategoryForm(request.POST)
         if form.is_valid():
-            txn = form.save(commit=False)
-            txn.user = request.user
-            txn.save()
-            return redirect('transaction_list')
+            cat = form.save(commit=False)
+            cat.user = request.user
+            cat.is_custom = True
+            cat.save()
+            return redirect('category_list')
     else:
-        form = TransactionForm()
-    return render(request, 'transactions/transaction_form.html', {'form': form})
+        form = CategoryForm()
+    return render(request, 'transactions/category_form.html', {'form': form})
+
+
+@login_required
+def category_list(request):
+    cats = Category.objects.filter(user=request.user)
+    return render(request, 'transactions/category_list.html', {'categories': cats})
+
+
+# ========== RECURRING TRANSACTIONS ==========
+@login_required
+def recurring_transaction_list(request):
+    rec_txns = RecurringTransaction.objects.filter(user=request.user).order_by('next_due')
+    return render(request, 'transactions/recurring_list.html', {'recurring_transactions': rec_txns})
+
+
+@login_required
+def recurring_transaction_create(request):
+    if request.method == 'POST':
+        form = RecurringTransactionForm(request.POST)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            obj.user = request.user
+            obj.save()
+            return redirect('recurring_transaction_list')
+    else:
+        form = RecurringTransactionForm()
+    return render(request, 'transactions/recurring_form.html', {'form': form})
+
+
+# ========== BUDGET ==========
+@login_required
+def budget_list(request):
+    budgets = Budget.objects.filter(user=request.user)
+    return render(request, 'transactions/budget_list.html', {'budgets': budgets})
+
+
+@login_required
+def budget_create(request):
+    if request.method == 'POST':
+        form = BudgetForm(request.POST)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            obj.user = request.user
+            obj.save()
+            return redirect('budget_list')
+    else:
+        form = BudgetForm()
+    return render(request, 'transactions/budget_form.html', {'form': form})
+
+
+# ========== TAGS ==========
+@login_required
+def tag_list(request):
+    tags = Tag.objects.filter(user=request.user)
+    return render(request, 'transactions/tag_list.html', {'tags': tags})
+
+
+@login_required
+def tag_create(request):
+    if request.method == 'POST':
+        form = TagForm(request.POST)
+        if form.is_valid():
+            tag = form.save(commit=False)
+            tag.user = request.user
+            tag.save()
+            return redirect('tag_list')
+    else:
+        form = TagForm()
+    return render(request, 'transactions/tag_form.html', {'form': form})

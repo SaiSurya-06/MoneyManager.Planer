@@ -153,3 +153,5 @@ def current_year(request):
     return {"now": timezone.now().year}
 
 TEMPLATES[0]["OPTIONS"]["context_processors"].append("moneymanager.settings.current_year")
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
