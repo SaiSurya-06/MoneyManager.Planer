@@ -33,7 +33,6 @@
 <canvas id="categoryChart" width="400" height="150"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // Safely encode Django data as JS arrays
     const labels = [
         {% for item in chart_data %}
             "{{ item.category }}"{% if not forloop.last %},{% endif %}
@@ -78,5 +77,28 @@
             }
         }
     });
+</script>
+
+<!-- Calendar View -->
+<link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.5/main.min.css' rel='stylesheet' />
+<div id='calendar'></div>
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.5/main.min.js'></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar');
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: 'dayGridMonth',
+        events: [
+            {% for txn in recent_txns %}
+                {
+                    title: '{{ txn.description|escapejs }} (₹{{ txn.amount }})',
+                    start: '{{ txn.date }}',
+                    color: '{% if txn.transaction_type == "income" %}green{% else %}red{% endif %}'
+                }{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        ]
+    });
+    calendar.render();
+});
 </script>
 {% endblock %}

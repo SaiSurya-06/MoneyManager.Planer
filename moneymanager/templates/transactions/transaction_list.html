@@ -2,6 +2,7 @@
 {% block content %}
 <h2>Transactions</h2>
 <a href="{% url 'transaction_create' %}" class="btn btn-success mb-2">Add Transaction</a>
+<a href="{% url 'transaction_upload' %}" class="btn btn-primary">Upload Transactions</a>
 <table class="table">
     <tr>
         <th>Date</th><th>Description</th><th>Amount</th><th>Type</th><th>Account</th><th>Category</th>

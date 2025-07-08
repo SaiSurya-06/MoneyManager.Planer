@@ -1,5 +1,5 @@
 from django import forms
-from .models import Account, Transaction
+from .models import Account, Transaction, Category
 
 class AccountForm(forms.ModelForm):
     class Meta:
@@ -11,5 +11,10 @@ class TransactionForm(forms.ModelForm):
         model = Transaction
         fields = ['date', 'description', 'amount', 'transaction_type', 'account', 'category']
 
-class PDFUploadForm(forms.Form):
-    file = forms.FileField(label="Upload PDF")
+class StatementUploadForm(forms.Form):
+    file = forms.FileField(label="Upload Statement (PDF/Excel/CSV)")
+
+class CategoryForm(forms.ModelForm):
+    class Meta:
+        model = Category
+        fields = ['name']
