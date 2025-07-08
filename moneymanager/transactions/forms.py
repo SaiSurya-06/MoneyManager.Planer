@@ -7,7 +7,7 @@ from .models import (
     Budget,
     Tag
 )
-from budgets.models import Budget  # instead of from .models import Budget
+# from budgets.models import Budget  # instead of from .models import Budget
 
 class AccountForm(forms.ModelForm):
     class Meta:
@@ -34,12 +34,16 @@ class RecurringTransactionForm(forms.ModelForm):
         model = RecurringTransaction
         fields = ['amount', 'description', 'frequency', 'next_due', 'category', 'account', 'transaction_type']
 
-class BudgetForm(forms.ModelForm):
-    class Meta:
-        model = Budget
-        fields = ['category', 'amount', 'month']
 
 class TagForm(forms.ModelForm):
     class Meta:
         model = Tag
         fields = ['name']
+
+class BudgetForm(forms.ModelForm):
+    class Meta:
+        model = Budget
+        fields = ['category', 'amount', 'month']
+        widgets = {
+            'month': forms.DateInput(attrs={'type': 'date'}), # Assuming month is a DateField
+        }

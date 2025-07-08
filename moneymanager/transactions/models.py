@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
-
+from accounts.models import CustomUser
 # --- ACCOUNT MODEL ---
 class Account(models.Model):
     ACCOUNT_TYPE_CHOICES = [
@@ -83,11 +83,11 @@ class RecurringTransaction(models.Model):
         return f"{self.description} ({self.frequency})"
 
 # --- BUDGET MODEL (with related_name to avoid conflicts) ---
-# class Budget(models.Model):`
-#     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transaction_budgets')
-#     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='transaction_budgets')
-#     amount = models.DecimalField(max_digits=12, decimal_places=2)
-#     month = models.DateField()  # Represented as the first day of the month
+class Budget(models.Model):
+    user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='transaction_budgets')
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='transaction_budgets')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    month = models.DateField()  # Represents the first day of the budget month
 
-#     def __str__(self):
-#         return f"{self.user.username} - {self.category.name} - {self.month.strftime('%B %Y')}"`
+    def __str__(self):
+        return f"{self.user.username} - {self.category.name} - {self.month.strftime('%Y-%m')} - ₹{self.amount}"
