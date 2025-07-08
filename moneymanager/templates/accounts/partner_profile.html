@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Partner Profile: {{ partner_user.username }}</h2>
+<ul>
+    <li>Email: {{ partner_user.email }}</li>
+    <li>Phone: {{ partner.phone }}</li>
+    <li>
+        {% if partner.avatar %}
+            <img src="{{ partner.avatar.url }}" width="80" height="80" alt="Avatar">
+        {% else %}
+            No avatar uploaded.
+        {% endif %}
+    </li>
+</ul>
+<a href="{% url 'partner_transactions' partner_user.id %}">View Partner Transactions</a>
+<a href="{% url 'profile' %}">Back to your profile</a>
+{% endblock %}

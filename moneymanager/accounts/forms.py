@@ -1,6 +1,6 @@
 from django import forms
 from django.contrib.auth.models import User
-from .models import Profile
+from .models import Profile, PartnerAccount
 
 class UserRegisterForm(forms.ModelForm):
     password = forms.CharField(widget=forms.PasswordInput)
@@ -21,3 +21,8 @@ class ProfileUpdateForm(forms.ModelForm):
     class Meta:
         model = Profile
         fields = ['phone', 'avatar']
+
+class PartnerLinkForm(forms.ModelForm):
+    class Meta:
+        model = PartnerAccount
+        fields = ['partner', 'can_edit']
