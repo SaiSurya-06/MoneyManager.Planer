@@ -24,11 +24,9 @@ urlpatterns = [
     path('recurring/', views.recurring_transaction_list, name='recurring_transaction_list'),
     path('recurring/add/', views.recurring_transaction_create, name='recurring_transaction_create'),
 
-    # Budgets
-    path('budgets/', views.budget_list, name='budget_list'),
-    path('budgets/add/', views.budget_create, name='budget_create'),
-
     # Tags
     path('tags/', views.tag_list, name='tag_list'),
     path('tags/add/', views.tag_create, name='tag_create'),
+
+    # Budget URLs removed - should be in budgets app
 ]

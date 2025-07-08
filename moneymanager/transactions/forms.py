@@ -7,6 +7,7 @@ from .models import (
     Budget,
     Tag
 )
+from budgets.models import Budget  # instead of from .models import Budget
 
 class AccountForm(forms.ModelForm):
     class Meta:

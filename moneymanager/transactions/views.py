@@ -11,12 +11,12 @@ from django.http import JsonResponse, HttpResponse
 from django.utils.dateparse import parse_date
 from .models import (
     Transaction, Category, Account,
-    RecurringTransaction, Budget, Tag, TransactionTag
+    RecurringTransaction, Tag, TransactionTag
 )
 from .forms import (
     TransactionForm, StatementUploadForm,
     CategoryForm, AccountForm,
-    RecurringTransactionForm, BudgetForm, TagForm
+    RecurringTransactionForm, TagForm
 )
 
 
@@ -310,27 +310,6 @@ def recurring_transaction_create(request):
     return render(request, 'transactions/recurring_form.html', {'form': form})
 
 
-# ========== BUDGET ==========
-@login_required
-def budget_list(request):
-    budgets = Budget.objects.filter(user=request.user)
-    return render(request, 'transactions/budget_list.html', {'budgets': budgets})
-
-
-@login_required
-def budget_create(request):
-    if request.method == 'POST':
-        form = BudgetForm(request.POST)
-        if form.is_valid():
-            obj = form.save(commit=False)
-            obj.user = request.user
-            obj.save()
-            return redirect('budget_list')
-    else:
-        form = BudgetForm()
-    return render(request, 'transactions/budget_form.html', {'form': form})
-
-
 # ========== TAGS ==========
 @login_required
 def tag_list(request):
@@ -350,3 +329,5 @@ def tag_create(request):
     else:
         form = TagForm()
     return render(request, 'transactions/tag_form.html', {'form': form})
+
+# Budget views removed - should be in budgets app

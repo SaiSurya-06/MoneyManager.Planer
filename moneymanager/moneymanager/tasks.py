@@ -1,6 +1,7 @@
 from celery import shared_task
 from django.utils.timezone import now
-from .models import RecurringTransaction, Transaction
+from dateutil.relativedelta import relativedelta
+from transactions.models import RecurringTransaction, Transaction
 
 @shared_task
 def process_recurring_transactions():

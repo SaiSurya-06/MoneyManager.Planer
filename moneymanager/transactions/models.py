@@ -82,12 +82,12 @@ class RecurringTransaction(models.Model):
     def __str__(self):
         return f"{self.description} ({self.frequency})"
 
-# --- BUDGET MODEL ---
-class Budget(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    amount = models.DecimalField(max_digits=12, decimal_places=2)
-    month = models.DateField()  # Represented as the first day of the month
+# --- BUDGET MODEL (with related_name to avoid conflicts) ---
+# class Budget(models.Model):`
+#     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='transaction_budgets')
+#     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='transaction_budgets')
+#     amount = models.DecimalField(max_digits=12, decimal_places=2)
+#     month = models.DateField()  # Represented as the first day of the month
 
-    def __str__(self):
-        return f"{self.user.username} - {self.category.name} - {self.month.strftime('%B %Y')}"
+#     def __str__(self):
+#         return f"{self.user.username} - {self.category.name} - {self.month.strftime('%B %Y')}"`
