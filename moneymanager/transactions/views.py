@@ -5,34 +5,22 @@ from datetime import datetime
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-<<<<<<< HEAD
-from django.http import JsonResponse, HttpResponse
-from django.utils.dateparse import parse_date
-from .models import (
-    Transaction, Category, Account,
-    RecurringTransaction, Tag, TransactionTag
-)
-from .forms import (
-    TransactionForm, StatementUploadForm,
-    CategoryForm, AccountForm,
-    RecurringTransactionForm, TagForm
-)
-=======
 from .models import Transaction, Category, Account
 from .forms import TransactionForm, StatementUploadForm, CategoryForm, AccountForm
->>>>>>> parent of bbb7610 (update 2)
 
 
 @login_required
 def transaction_upload(request):
     if request.method == 'POST':
-        form = StatementUploadForm(request.POST, request.FILES)
+        form = StatementUploadForm(request.POST, request.FILES, user=request.user)
         if form.is_valid():
             file = form.cleaned_data['file']
+            account_obj = form.cleaned_data['account']
             try:
                 txn_count = 0
                 duplicate_count = 0
 
+                # ========== PDF Upload ==========
                 if file.name.endswith('.pdf'):
                     file.seek(0)
                     text = ""
@@ -41,11 +29,6 @@ def transaction_upload(request):
                             text += page.get_text()
 
                     lines = text.split('\n')
-                    account_obj = Account.objects.filter(user=request.user).first()
-                    if not account_obj:
-                        messages.error(request, "Please add at least one account before uploading.")
-                        return redirect('account_list')
-
                     i = 0
                     while i < len(lines) - 1:
                         line1 = lines[i].strip()
@@ -59,7 +42,6 @@ def transaction_upload(request):
                                 desc_start = line1.find(value_date_str) + len(value_date_str)
                                 description = line1[desc_start:].strip()
 
-                                # fallback: collect numeric amounts in line2
                                 amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line2)
                                 withdrawal, deposit = None, None
                                 if len(amounts) == 3:
@@ -126,88 +108,121 @@ def transaction_upload(request):
                         messages.error(request, "No valid new transactions found in PDF.")
                     return redirect('transaction_list')
 
-                elif file.name.endswith('.csv'):
-                    df = pd.read_csv(file)
-                    dfs = [df]
+                # ========== Excel Upload ==========
                 elif file.name.endswith('.xls') or file.name.endswith('.xlsx'):
                     df = pd.read_excel(file)
-                    dfs = [df]
-                else:
-                    messages.error(request, "Unsupported file type.")
-                    return redirect('transaction_upload')
+                    df.columns = [col.strip().lower() for col in df.columns]
+                    df = df.fillna('')
 
-                if not file.name.endswith('.pdf'):
-                    col_map_variants = {
-                        'date': ['date', 'Date', 'transaction date', 'Transaction Date'],
-                        'description': ['description', 'Description', 'desc', 'Desc'],
-                        'amount': ['amount', 'Amount', 'amt', 'Amt'],
-                        'type': ['type', 'Type', 'transaction type', 'Transaction Type'],
-                        'category': ['category', 'Category']
+                    # Optional debug: show detected columns
+                    messages.info(request, f"Detected Excel columns: {df.columns.tolist()}")
+
+                    # Flexible header alias detection
+                    col_map = {
+                        'date': ['date', 'txn date', 'transaction date', 'value date'],
+                        'description': ['description', 'narration', 'particulars'],
+                        'withdrawal': ['withdrawal', 'withdrawals', 'withdrawal amt', 'withdrawal amt.', 'withdrawal amount'],
+                        'deposit': ['deposit', 'deposits', 'deposit amt', 'deposit amt.', 'deposit amount'],
                     }
-                    required_cols = set(col_map_variants.keys())
 
-                    for df in dfs:
-                        norm_cols = [col.strip().lower() for col in df.columns]
-                        df.columns = norm_cols
-                        rename_dict = {}
-                        for target, variants in col_map_variants.items():
-                            for v in variants:
-                                if v.lower() in norm_cols:
-                                    rename_dict[v.lower()] = target
-                        df = df.rename(columns=rename_dict)
-                        if not required_cols.issubset(df.columns):
-                            continue
+                    mapped_cols = {}
+                    for key, aliases in col_map.items():
+                        for alias in aliases:
+                            if alias in df.columns:
+                                mapped_cols[key] = alias
+                                break
 
-                        account_obj = Account.objects.filter(user=request.user).first()
+                    if 'date' in mapped_cols and 'description' in mapped_cols and ('withdrawal' in mapped_cols or 'deposit' in mapped_cols):
                         for _, row in df.iterrows():
-                            if pd.isnull(row.get('date')) or pd.isnull(row.get('amount')):
-                                continue
                             try:
-                                txn_date = pd.to_datetime(row['date']).date()
+                                txn_date = pd.to_datetime(row[mapped_cols['date']], dayfirst=True).date()
+                                description = str(row[mapped_cols['description']]).strip()
+
+                                withdrawal = str(row.get(mapped_cols.get('withdrawal'), '')).replace(',', '').strip()
+                                deposit = str(row.get(mapped_cols.get('deposit'), '')).replace(',', '').strip()
+
+                                amount = None
+                                txn_type = None
+
+                                if withdrawal and withdrawal not in ['0', '0.0', '']:
+                                    amount = float(withdrawal)
+                                    txn_type = 'expense'
+                                elif deposit and deposit not in ['0', '0.0', '']:
+                                    amount = float(deposit)
+                                    txn_type = 'income'
+                                else:
+                                    continue
+
+                                if Transaction.objects.filter(
+                                    user=request.user,
+                                    date=txn_date,
+                                    amount=amount,
+                                    description=description,
+                                    account=account_obj
+                                ).exists():
+                                    duplicate_count += 1
+                                    continue
+
+                                category_name = "UPI" if 'upi' in description.lower() else "Uncategorized"
+                                category_obj, _ = Category.objects.get_or_create(user=request.user, name=category_name)
+
+                                Transaction.objects.create(
+                                    user=request.user,
+                                    date=txn_date,
+                                    description=description,
+                                    amount=amount,
+                                    transaction_type=txn_type,
+                                    account=account_obj,
+                                    category=category_obj
+                                )
+                                txn_count += 1
                             except Exception:
                                 continue
 
-                            category_name = row.get('category', 'Uncategorized')
-                            description = str(row.get('description', ''))
-                            txn_type = str(row.get('type', 'expense')).lower()
-                            amount = row['amount']
-                            category_obj, _ = Category.objects.get_or_create(user=request.user, name=category_name)
-
-                            if Transaction.objects.filter(
-                                user=request.user,
-                                date=txn_date,
-                                amount=amount,
-                                description=description,
-                                account=account_obj
-                            ).exists():
-                                duplicate_count += 1
-                                continue
-
-                            Transaction.objects.create(
-                                user=request.user,
-                                date=txn_date,
-                                description=description,
-                                amount=amount,
-                                transaction_type=txn_type,
-                                account=account_obj,
-                                category=category_obj
-                            )
-                            txn_count += 1
-
-                    if txn_count:
-                        msg = f"{txn_count} transaction(s) uploaded successfully!"
-                        if duplicate_count:
-                            msg += f" {duplicate_count} duplicate(s) skipped."
-                        messages.success(request, msg)
+                        if txn_count:
+                            msg = f"{txn_count} transaction(s) uploaded successfully!"
+                            if duplicate_count:
+                                msg += f" {duplicate_count} duplicate(s) skipped."
+                            messages.success(request, msg)
+                        else:
+                            messages.error(request, "No valid new transactions found in statement.")
                     else:
-                        messages.error(request, "No valid new transactions found in statement.")
+                        messages.error(request, "Unsupported Excel format. Required columns: date, description, and withdrawal/deposit.")
+                    return redirect('transaction_list')
+
+                else:
+                    messages.error(request, "Unsupported file type.")
+                    return redirect('transaction_upload')
 
             except Exception as e:
                 messages.error(request, f"Error: {e}")
             return redirect('transaction_list')
     else:
-        form = StatementUploadForm()
+        form = StatementUploadForm(user=request.user)
+
     return render(request, 'transactions/transaction_upload.html', {'form': form})
+
+
+# ========== Other Views ==========
+
+@login_required
+def transaction_list(request):
+    transactions = Transaction.objects.filter(user=request.user).order_by('-date')
+    return render(request, 'transactions/transaction_list.html', {'transactions': transactions})
+
+
+@login_required
+def transaction_create(request):
+    if request.method == 'POST':
+        form = TransactionForm(request.POST)
+        if form.is_valid():
+            txn = form.save(commit=False)
+            txn.user = request.user
+            txn.save()
+            return redirect('transaction_list')
+    else:
+        form = TransactionForm()
+    return render(request, 'transactions/transaction_form.html', {'form': form})
 
 
 @login_required
@@ -222,28 +237,6 @@ def transaction_edit(request, pk):
     else:
         form = TransactionForm(instance=txn)
     return render(request, 'transactions/transaction_form.html', {'form': form})
-
-
-@login_required
-def add_category(request):
-    if request.method == 'POST':
-        form = CategoryForm(request.POST)
-        if form.is_valid():
-            cat = form.save(commit=False)
-            cat.user = request.user
-            cat.is_custom = True
-            cat.save()
-            messages.success(request, "Category added!")
-            return redirect('category_list')
-    else:
-        form = CategoryForm()
-    return render(request, 'transactions/category_form.html', {'form': form})
-
-
-@login_required
-def category_list(request):
-    cats = Category.objects.filter(user=request.user)
-    return render(request, 'transactions/category_list.html', {'categories': cats})
 
 
 @login_required
@@ -267,20 +260,34 @@ def account_create(request):
 
 
 @login_required
-def transaction_list(request):
-    transactions = Transaction.objects.filter(user=request.user).order_by('-date')
-    return render(request, 'transactions/transaction_list.html', {'transactions': transactions})
+def category_list(request):
+    cats = Category.objects.filter(user=request.user)
+    return render(request, 'transactions/category_list.html', {'categories': cats})
 
 
 @login_required
-def transaction_create(request):
+def add_category(request):
     if request.method == 'POST':
-        form = TransactionForm(request.POST)
+        form = CategoryForm(request.POST)
         if form.is_valid():
-            txn = form.save(commit=False)
-            txn.user = request.user
-            txn.save()
-            return redirect('transaction_list')
+            cat = form.save(commit=False)
+            cat.user = request.user
+            cat.is_custom = True
+            cat.save()
+            messages.success(request, "Category added!")
+            return redirect('category_list')
     else:
-        form = TransactionForm()
-    return render(request, 'transactions/transaction_form.html', {'form': form})
+        form = CategoryForm()
+    return render(request, 'transactions/category_form.html', {'form': form})
+
+
+from django.http import HttpResponseForbidden
+
+@login_required
+def transaction_delete(request, pk):
+    txn = get_object_or_404(Transaction, pk=pk, user=request.user)
+    if request.method == 'POST':
+        txn.delete()
+        messages.success(request, "Transaction deleted successfully.")
+        return redirect('transaction_list')
+    return render(request, 'transactions/transaction_confirm_delete.html', {'transaction': txn})

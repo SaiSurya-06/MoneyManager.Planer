@@ -8,6 +8,7 @@ urlpatterns = [
     path('transactions/add/', views.transaction_create, name='transaction_create'),
     path('upload/', views.transaction_upload, name='transaction_upload'),
     path('transactions/<int:pk>/edit/', views.transaction_edit, name='transaction_edit'),
+    path('transactions/<int:pk>/delete/', views.transaction_delete, name='transaction_delete'),
     path('add_category/', views.add_category, name='add_category'),
     path('categories/', views.category_list, name='category_list'),
 ]

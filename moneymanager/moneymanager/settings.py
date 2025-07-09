@@ -28,12 +28,14 @@ INSTALLED_APPS = [
 
     # Local apps
     "accounts",
-    "transactions",
+    # "transactions",
     "budgets",
     "dashboard",
     "insights",
     "portfolio",
     "api",
+
+    "transactions.apps.TransactionsConfig",
 ]
 
 MIDDLEWARE = [

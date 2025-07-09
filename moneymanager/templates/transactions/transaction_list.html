@@ -17,7 +17,8 @@
         <td>{{ txn.account.name }}</td>
         <td>{{ txn.category }}</td>
         <td>
-            <a href="{% url 'transaction_edit' txn.id %}" class="btn btn-sm btn-primary">Edit</a>
+            <a href="{% url 'transaction_edit' txn.pk %}" class="btn btn-sm btn-primary">Edit</a>
+            <a href="{% url 'transaction_delete' txn.pk %}" class="btn btn-sm btn-danger">Delete</a>
         </td>
     </tr>
     {% empty %}

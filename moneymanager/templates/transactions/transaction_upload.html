@@ -1,9 +1,41 @@
 {% extends 'base.html' %}
+{% load static %}
+
 {% block content %}
-<h2>Upload Bank Statement (PDF/Excel/CSV)</h2>
-<form method="post" enctype="multipart/form-data">
+<h2>Upload Bank Statement</h2>
+
+<form method="post" enctype="multipart/form-data" id="uploadForm">
     {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-success">Upload</button>
+    <div class="form-group">
+        {{ form.account.label_tag }}
+        {{ form.account }}
+    </div>
+    <div class="form-group">
+        {{ form.file.label_tag }}
+        {{ form.file }}
+    </div>
+    <button type="submit" class="btn btn-primary">Upload</button>
+
+    <div id="loadingSpinner" style="display: none; margin-top: 10px;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="sr-only">Uploading...</span>
+        </div>
+        <p>Uploading and processing... please wait</p>
+    </div>
 </form>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function() {
+    document.getElementById('loadingSpinner').style.display = 'block';
+});
+</script>
+
+{% if messages %}
+<div class="mt-3">
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% endblock %}
